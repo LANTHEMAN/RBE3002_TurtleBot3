@@ -13,27 +13,29 @@ import tf
 import copy
 
 class PathFinder:
-	def __init__(self):
+	def __init__(self):#constructor
 		self.map = None
 		self.start = None
 		self.goal = None
-		rospy.init_node('request_path_server')
+		rospy.init_node('request_path_server')#initiate path finding node
 		s = rospy.Service('request_path', PathRequest, self.aStar)
+		
+		self._odom_list = tf.TransformListener()
+		
+		rospy.Subscriber("/move_base_simple/goal", PoseStamped, self.updateGoal, queue_size=1)#subscribe to Rviz goal marker
+		rospy.Subscriber("/initialpose", PoseWithCovarianceStamped,self.updateStart,queue_size=1)#subscribe to Rviz starting marker
+		rospy.Subscriber('/map', OccupancyGrid, self.updateMap, queue_size=1) # handle nav goal events
+
+		#publisher for path,obstacles
+		self.pathPub = rospy.Publisher("/path", Path)
+		self.obstaclePub = rospy.Publisher("/obstacles", GridCells, queue_size =1)
+		self.pathGrid = rospy.Publisher("/pathGrid", GridCells, queue_size =1)
 		self.closedPub = rospy.Publisher("/closed_set", GridCells)
 		self.openPub = rospy.Publisher("/open_set", GridCells, queue_size = 1)
-		self._odom_list = tf.TransformListener()
-		self.pathPub = rospy.Publisher("/path", Path)
-		rospy.Subscriber("/move_base_simple/goal", PoseStamped, self.updateGoal, queue_size=1)
-		rospy.Subscriber("/initialpose", PoseWithCovarianceStamped,self.updateStart,queue_size=1)
-		rospy.Subscriber('/map', OccupancyGrid, self.updateMap, queue_size=1) # handle nav goal events
+
 		while(self.map == None):
-			pass
+			pass			
 
-		print self.map.data
-
-		print "Path request server ready"
-		testReq = PathRequest()
-		rospy.spin()
 
 	def updateStart(self, p):
 		poseStamped = PoseStamped()
@@ -44,6 +46,7 @@ class PathFinder:
 		newPose = self._odom_list.transformPose("/map", poseStamped)
 		self.start = newPose.pose.position
 		print "start updated to \n", self.start
+		print("xy index", self.pointToIndex(p.pose.pose.position))
 
 	def updateGoal(self,goal):
 		self._odom_list.waitForTransform('/map', goal.header.frame_id, rospy.Time.now(), rospy.Duration(1.0))
@@ -57,14 +60,25 @@ class PathFinder:
 
 	def updateMap(self,occGrid):
 		self.map = occGrid
-		print(occGrid.info)
-		print("\n")
+
+		obstacles = []
+		for i in range(len(self.map.data)):
+			
+			x = (i % self.map.info.width) * self.map.info.resolution +self.map.info.origin.position.x
+			y= i / self.map.info.width * self.map.info.resolution + self.map.info.origin.position.y
+			if(self.map.data[i] > 50):
+				obstacles.append(Point(x,y,0))
+		grid = self.makeGridCell(obstacles)
+		self.obstaclePub.publish(grid)
+
+		#print(occGrid.info)
+		#print("\n")
 
 	def xyToIndex(self,x,y):
-		#x -= self.map.info.origin.position.x
-		#y-= self.map.info.origin.position.y
-		xIndex = x/self.map.info.resolution
-		yIndex = y/self.map.info.resolution
+		x -= self.map.info.origin.position.x
+		y-= self.map.info.origin.position.y
+		xIndex = (int)(x/self.map.info.resolution)
+		yIndex = (int)(y/self.map.info.resolution)
 		return int(yIndex*self.map.info.width + xIndex)
 	def pointToIndex(self,p):
 		x = p.x
@@ -76,51 +90,45 @@ class PathFinder:
 		start = req.start
 		end = req.end
 		closedSet = []
-		openSet = []
-		
-
-		cameFrom = [None for point in self.map.data]
-		gCost = [100 for point in self.map.data]
-		fCost = [None for point in self.map.data]
-
-		gCost[self.pointToIndex(start)] = 0
-		fCost[self.pointToIndex(start)] = 0
+		openSet = [] #a heap of tuples
 		heappush(openSet,(0,start))
+		cameFrom = {}
+		cameFrom[self.pointToIndex(start)] = None #indexed usingPointToIndex
+		costSoFar = {} #indexed using pointToIndex
+		costSoFar[self.pointToIndex(start)] = 0;
 
 		while not len(openSet) == 0:
-			print("open size, ", len(openSet), "closed size", len(closedSet))
+			#print("open size, ", len(openSet), "closed size", len(closedSet))		
 
-
-			self.closedPub.publish(self.makeGridCell(closedSet))
-			self.openPub.publish(self.makeGridCell([x[1] for x in openSet]))
-
-
-			current = heappop(openSet)[1] #pull out just the point from the tuple
+			current = heappop(openSet) #pull out just the point from the tuple
+			print("current priority", current[0])
+			current = current[1]
+			currentIdx = self.pointToIndex(current)
+			print("current cost so far", costSoFar[currentIdx])
 			if(self.distance(current,end) < self.map.info.resolution):
 				print "path found quitting"
-				self.reconstruct_path(cameFrom, current)
+				self.reconstruct_path(cameFrom, current,costSoFar)
 				break
+
 			closedSet.append(current)
+			self.closedPub.publish(self.makeGridCell(closedSet))
 
-			for n in self.getNeighbors(current):
-				if n in closedSet:
-					continue
-					#currnet cost plus cost to get to neighbor
-				tempGCost = gCost[self.pointToIndex(current)] + max(.01, self.map.data[self.pointToIndex(n)]*100)
-				print(self.map.data[self.pointToIndex(n)])
+			for next in self.getNeighbors(current):
+				nextIdx = self.pointToIndex(next)
+				if (nextIdx < len(self.map.data) and nextIdx > 0):
 
-				if cameFrom[self.pointToIndex(n)] == None:
-					totalCost = self.heuristic(n,req.end) + tempGCost
-					heappush(openSet,(totalCost,n))
-				elif tempGCost >= gCost[self.pointToIndex(n)]: #already a shorter path to get here dont update value
-					continue
+					if(next.x != current.x and next.y != current.y): #it was a diaganol movement
+						new_cost = costSoFar[currentIdx] + self.map.data[nextIdx] + math.sqrt(2)
+					else:
+						new_cost = costSoFar[currentIdx] + self.map.data[nextIdx] + 1 #new cost = old cost + probability its an obstacled + 1 striaght movement
 
-				#best path so far
-				cameFrom[self.pointToIndex(n)] = current
-				gCost[self.pointToIndex(n)] = tempGCost
-				fCost[self.pointToIndex(n)] = tempGCost + self.heuristic(n,req.end)
-				
-		print "no path found"
+					if not costSoFar.has_key(nextIdx) or new_cost < costSoFar[nextIdx]:
+						costSoFar[nextIdx] = new_cost
+						priority = new_cost + self.heuristic(next,end) #Fn
+						heappush(openSet, (priority, next)) #heaps sort on first value of tuple
+						self.openPub.publish(self.makeGridCell([x[1] for x in openSet]))
+						cameFrom[nextIdx] = current
+
 
 	def heapToList(self, queue):
 		q = copy.deepcopy(queue)
@@ -144,7 +152,7 @@ class PathFinder:
 		return grid
 		
 
-	def reconstruct_path(self,cameFrom,current): #current is the goal
+	def reconstruct_path(self,cameFrom,current,costSoFar): #current is the goal
 		path = []
 		header = Header()
 		header.seq = 0
@@ -152,14 +160,19 @@ class PathFinder:
 		header.frame_id = "/map"
 		p = Path()
 		p.header = header
+		gridPath=[]
 		while current != None:
 			pStamped = PoseStamped()
 			pStamped.header = header
 			pStamped.pose.position = current
 			path.insert(0, pStamped)
+			gridPath.insert(0,current)
 			current = cameFrom[self.pointToIndex(current)]
 		p.poses = path
-		print(path)
+		grid = self.makeGridCell(gridPath)
+		self.pathGrid.publish(grid)
+		#print(path)
+
 		self.pathPub.publish(p)
 
 
@@ -174,7 +187,7 @@ class PathFinder:
 
 	def getNeighbors(self, point):
 		#8Connected Neighbors
-		print('getting neighbors')
+		#print('getting neighbors')
 		neighbors = []
 		for xMod in range(-1,2):
 			for yMod in range(-1,2):
@@ -183,8 +196,12 @@ class PathFinder:
 					y = point.y + yMod*self.map.info.resolution
 					z = 0
 					neighbors.append(Point(x,y,z))
-		print('done')
 		return neighbors
+
     
 if __name__ == "__main__":
     p = PathFinder()
+
+    
+    while  not rospy.is_shutdown():
+        pass 
