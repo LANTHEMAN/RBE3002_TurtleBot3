@@ -160,7 +160,7 @@ class PathFinder:
 		p.poses = path
 		grid = self.makeGridCell(gridPath)
 		self.pathGrid.publish(grid)#publish path
-		#print(path)
+		print(gridPath)
 
 		self.pathPub.publish(p)#publish path in grid form 
 
@@ -190,7 +190,11 @@ class PathFinder:
     
 if __name__ == "__main__":
     p = PathFinder()
-
-    
+    rospy.wait_for_service('request_path')
+    test_service = rospy.ServiceProxy('request_path',PathRequest)
+    Start = Point(10,10,0)
+    End = Point(5,5,0)
+    test_result = test_service(Start,End)
+    print(test_result)
     while  not rospy.is_shutdown():
         pass 
