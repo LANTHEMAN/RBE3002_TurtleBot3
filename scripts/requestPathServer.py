@@ -27,10 +27,10 @@ class PathFinder:
 		rospy.Subscriber('/map', OccupancyGrid, self.updateMap, queue_size=1) # handle nav goal events
 
 		#publisher for path,obstacles
-		self.pathPub = rospy.Publisher("/path", Path)
+		self.pathPub = rospy.Publisher("/path", Path,queue_size = 1)
 		self.obstaclePub = rospy.Publisher("/obstacles", GridCells, queue_size =1)
 		self.pathGrid = rospy.Publisher("/pathGrid", GridCells, queue_size =1)
-		self.closedPub = rospy.Publisher("/closed_set", GridCells)
+		self.closedPub = rospy.Publisher("/closed_set", GridCells,queue_size = 1)
 		self.openPub = rospy.Publisher("/open_set", GridCells, queue_size = 1)
 
 		while(self.map == None):
@@ -106,8 +106,9 @@ class PathFinder:
 			currentIdx = self.pointToIndex(current)
 			print("current cost so far", costSoFar[currentIdx])
 			if(self.distance(current,end) < self.map.info.resolution):
-				print "path found quitting"
+				
 				self.reconstruct_path(cameFrom, current,costSoFar)
+				print "path found quitting"
 				break
 
 			closedSet.append(current)
@@ -174,7 +175,7 @@ class PathFinder:
 		#print(path)
 
 		self.pathPub.publish(p)
-
+		print(gridPath)
 
 	def distance(self, p1, p2):
 		return math.sqrt((p1.x - p2.x)**2 + (p1.y - p2.y) **2)
@@ -201,7 +202,11 @@ class PathFinder:
     
 if __name__ == "__main__":
     p = PathFinder()
-
-    
+    rospy.wait_for_service('request_path')
+    test_service = rospy.ServiceProxy('request_path',PathRequest)
+    Start = Point(10,10,0)
+    End = Point(5,5,0)
+    test_result = test_service(Start,End)
+    print(test_result)
     while  not rospy.is_shutdown():
         pass 
