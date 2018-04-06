@@ -123,6 +123,7 @@ catkin_package(
 include_directories(
 # include
   ${catkin_INCLUDE_DIRS}
+  srv
 )
 
 ## Declare a C++ library

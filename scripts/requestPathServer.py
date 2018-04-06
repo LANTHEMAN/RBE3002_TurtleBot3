@@ -1,14 +1,15 @@
 #!/usr/bin/env python
-
+from tf.transformations import quaternion_from_euler
 import rospy
 from nav_msgs.msg import OccupancyGrid
-from lab3.srv import PathRequest
+#from lab3.srv import PathRequest
 from geometry_msgs.msg import Point, PoseStamped, PoseWithCovarianceStamped
 from heapq import *
 from nav_msgs.msg import GridCells, Path
 from std_msgs.msg import *
 import math
 import tf
+from lab3.srv import *
 
 import copy
 
@@ -22,9 +23,7 @@ class PathFinder:
 		
 		self._odom_list = tf.TransformListener()
 		
-		rospy.Subscriber("/move_base_simple/goal", PoseStamped, self.updateGoal, queue_size=1)#subscribe to Rviz goal marker
-		rospy.Subscriber("/initialpose", PoseWithCovarianceStamped,self.updateStart,queue_size=1)#subscribe to Rviz starting marker
-		rospy.Subscriber('/map', OccupancyGrid, self.updateMap, queue_size=1) # handle nav goal events
+		
 
 		#publisher for path,obstacles
 		self.pathPub = rospy.Publisher("/path", Path,queue_size = 1)
@@ -33,8 +32,12 @@ class PathFinder:
 		self.closedPub = rospy.Publisher("/closed_set", GridCells,queue_size = 1)
 		self.openPub = rospy.Publisher("/open_set", GridCells, queue_size = 1)
 
+		rospy.Subscriber('/map', OccupancyGrid, self.updateMap, queue_size=1) # handle nav goal events
 		while(self.map == None):
 			pass			
+		rospy.Subscriber("/move_base_simple/goal", PoseStamped, self.updateGoal, queue_size=1)#subscribe to Rviz goal marker
+		rospy.Subscriber("/initialpose", PoseWithCovarianceStamped,self.updateStart,queue_size=1)#subscribe to Rviz starting marker
+		rospy.spin()
 
 
 	def updateStart(self, p):
@@ -101,17 +104,18 @@ class PathFinder:
 			#print("open size, ", len(openSet), "closed size", len(closedSet))		
 
 			current = heappop(openSet) #pull out just the point from the tuple
-			print("current priority", current[0])
+			#print("current priority", current[0])
 			current = current[1]
 			currentIdx = self.pointToIndex(current)
-			print("current cost so far", costSoFar[currentIdx])
+			#print("current cost so far", costSoFar[currentIdx])
 			if(self.distance(current,end) < self.map.info.resolution):
 				
-				self.reconstruct_path(cameFrom, current,costSoFar)
+				return self.reconstruct_path(cameFrom, current,costSoFar)
 				print "path found quitting"
 				break
 
 			closedSet.append(current)
+			print ("closed set size: ", len(closedSet))
 			self.closedPub.publish(self.makeGridCell(closedSet))
 
 			for next in self.getNeighbors(current):
@@ -128,7 +132,10 @@ class PathFinder:
 						priority = new_cost + self.heuristic(next,end) #Fn
 						heappush(openSet, (priority, next)) #heaps sort on first value of tuple
 						self.openPub.publish(self.makeGridCell([x[1] for x in openSet]))
+						print ("open set size: ", len(openSet))
 						cameFrom[nextIdx] = current
+
+
 
 
 	def heapToList(self, queue):
@@ -166,9 +173,17 @@ class PathFinder:
 			pStamped = PoseStamped()
 			pStamped.header = header
 			pStamped.pose.position = current
+			parent = cameFrom[self.pointToIndex(current)]
+			if parent != None:
+				orientation = math.atan2((current.y - parent.y),(current.x - parent.x))
+				q = quaternion_from_euler(0,0,orientation)
+				pStamped.pose.orientation.x = q[0]
+				pStamped.pose.orientation.y = q[1]
+				pStamped.pose.orientation.z = q[2]
+				pStamped.pose.orientation.w = q[3]
 			path.insert(0, pStamped)
 			gridPath.insert(0,current)
-			current = cameFrom[self.pointToIndex(current)]
+			current = parent
 		p.poses = path
 		grid = self.makeGridCell(gridPath)
 		self.pathGrid.publish(grid)
@@ -176,6 +191,7 @@ class PathFinder:
 
 		self.pathPub.publish(p)
 		print(gridPath)
+		return PathRequestResponse(path)
 
 	def distance(self, p1, p2):
 		return math.sqrt((p1.x - p2.x)**2 + (p1.y - p2.y) **2)
@@ -202,11 +218,15 @@ class PathFinder:
     
 if __name__ == "__main__":
     p = PathFinder()
-    rospy.wait_for_service('request_path')
-    test_service = rospy.ServiceProxy('request_path',PathRequest)
-    Start = Point(10,10,0)
-    End = Point(5,5,0)
-    test_result = test_service(Start,End)
-    print(test_result)
+    
+    # test_service = rospy.ServiceProxy('request_path',PathRequest)
+    # Start = Point(10,10,0)
+    # End = Point(5,5,0)
+    # test_result = test_service(Start,End)
+    # print(test_result)
+
+    # rospy.wait_for_service('request_path')
+    # rospy.spin()
     while  not rospy.is_shutdown():
+    	rospy.wait_for_service('request_path')
         pass 
