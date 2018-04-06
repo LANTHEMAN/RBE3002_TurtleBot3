@@ -58,8 +58,7 @@ find_package(catkin REQUIRED COMPONENTS
 
 ## Generate services in the 'srv' folder
  add_service_files(
-    FILES
-    PathRequest.srv
+ DIRECTORY srv FILES PathRequest.srv
  )
 
 ## Generate actions in the 'action' folder
@@ -108,6 +107,9 @@ find_package(catkin REQUIRED COMPONENTS
 ## DEPENDS: system dependencies of this project that dependent projects also need
 catkin_package(
     CATKIN_DEPENDS message_runtime
+		INCLUDE_DIRS scripts
+		INCLUDE_DIRS srv
+		INCLUDE_DIRS src 
 #  INCLUDE_DIRS include
 #  LIBRARIES lab3
 #  CATKIN_DEPENDS rospy std_msgs
