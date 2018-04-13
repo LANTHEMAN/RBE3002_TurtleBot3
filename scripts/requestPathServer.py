@@ -21,6 +21,7 @@ class PathFinder:
 		self.downSizedMap = None
 		self.start = None
 		self.goal = None
+		self.dumbcounter = 0
 		rospy.init_node('request_path_server')#initiate path finding node
 		s = rospy.Service('request_path', PathRequest, self.aStar)
 
@@ -34,7 +35,8 @@ class PathFinder:
 		self.pathGrid = rospy.Publisher("/pathGrid", GridCells, queue_size =1)
 		self.closedPub = rospy.Publisher("/closed_set", GridCells,queue_size = 1)
 		self.openPub = rospy.Publisher("/open_set", GridCells, queue_size = 1)
-		
+		self.changeMap = rospy.Publisher("/mapChange",Bool, queue_size = 1)
+
 		rospy.Subscriber('/move_base/local_costmap/costmap', OccupancyGrid, self.updateLocalMap, queue_size=1)
 		rospy.Subscriber('/map', OccupancyGrid, self.updateMap, queue_size=1) # handle nav goal events
 		while(self.map == None): 
@@ -45,6 +47,10 @@ class PathFinder:
 		rospy.spin()
 
 	def updateLocalMap(self,occGrid):
+		self.dumbcounter += 1
+		if (self.dumbcounter > 2):
+			self.changeMap.publish(True)
+			self.dumbcounter = 0
 		self.local_costmap = occGrid
 
 	def updateStart(self, p):
@@ -67,6 +73,7 @@ class PathFinder:
 		request.end = self.goal
 		print "end updated to \n",self.goal
 		self.aStar(request)
+
 
 	# def downsizeMap(self,occGrid,ratio):
 	# 	self.map = copy.deepcopy(occGrid)
@@ -155,7 +162,7 @@ class PathFinder:
 		return self.xyToIndex(x,y,map1)
 
 	def aStar(self,req):
-		print "Processing Request to go from\n", req.start, "\nto\n", req.end
+		print "Processing Request to go from\n", req.start, "\nto\n",
 		self.goal = req.end
 		start = req.start
 		end = req.end
@@ -175,7 +182,7 @@ class PathFinder:
 			current = current[1]
 			currentIdx = self.pointToIndex(current,self.map)
 			#print("current cost so far", costSoFar[currentIdx])
-			if(self.distance(current,end) < self.map.info.resolution):				
+			if(self.distance(current,end) < .15):				
 
 				return self.reconstruct_path(cameFrom, current,costSoFar)
 				print "path found quitting"
@@ -193,26 +200,26 @@ class PathFinder:
 					else:
 						mapData = self.map.data[nextIdx]
 
-					new_cost = 0
-					new_cost += self.localCostHeuristic(next, self.local_costmap)
+					
+					heur = self.localCostHeuristic(next, self.local_costmap)
 
 					#discourage turning more than necessary - additional heuristic value
 					prevNode = cameFrom[self.pointToIndex(current,self.map)]
 					if(prevNode != None):
-						prevAngle = math.atan2(prevNode.y - current.y, prevNode.x - current.x)
+					 	prevAngle = math.atan2(prevNode.y - current.y, prevNode.x - current.x)
 						nextAngle = math.atan2(current.y - next.y, current.x - next.x)
+						heur += (abs(prevAngle - nextAngle) / (math.pi)) *0.01
 
-						new_cost += (abs(prevAngle - nextAngle) / (math.pi)) *2
-
+					new_cost = 0
 					if(next.x != current.x and next.y != current.y): #it was a diaganol movement
-						new_cost += costSoFar[currentIdx] + mapData+ self.map.info.resolution
+						new_cost += costSoFar[currentIdx] + mapData+ self.map.info.resolution*1.4141
 					else:
 						new_cost += costSoFar[currentIdx] + mapData + self.map.info.resolution #new cost = old cost + probability its an obstacled + 1 striaght movement
 					if not nextIdx in costSoFar or new_cost < costSoFar[nextIdx]:
 						costSoFar[nextIdx] = new_cost
-						priority = new_cost + self.heuristic(next,end) #Fn
+						priority = new_cost + heur+ self.heuristic(next,end) #Fn
 						heappush(openSet, (priority, next)) #heaps sort on first value of tuple
-						#self.openPub.publish(self.makeGridCell([x[1] for x in openSet]))
+						self.openPub.publish(self.makeGridCell([x[1] for x in openSet]))
 						#print ("open set size: ", len(openSet))
 						cameFrom[nextIdx] = current
 
@@ -288,10 +295,10 @@ class PathFinder:
 		if(index > 0 and index < len(map1.data)):
 			return map1.data[index]
 		else:
-			return 50
+			return 0
 
 	def heuristic(self,p,g):
-		return (p.x - g.x)**2 + (p.y - g.y) **2
+		return 2*((p.x - g.x)**2 + (p.y - g.y) **2)
 
 
 

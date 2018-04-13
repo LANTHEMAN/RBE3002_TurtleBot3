@@ -20,7 +20,7 @@ class Robot:
         """
             This constructor sets up class variables and pubs/subs
         """
-	
+        self.mapChange = False	   
         self._current = Pose() # initlize correctly _
         self._current.position.x=0
         self._current.position.y = 0
@@ -37,23 +37,30 @@ class Robot:
         self.angleAccuracy = .01
         self.maxLinAcc = 1 #meters per second per meter
         self.maxSpeed = .22
-        self.maxAngAcc = .5 #radians per second per radian
+        self.maxAngAcc = .8 #radians per second per radian
         self.aStarService = rospy.ServiceProxy('request_path',PathRequest)
-
+        rospy.Subscriber('/mapChange',Bool, self.setMapChange, queue_size=1)
         rospy.Subscriber('/move_base_simple/goal', PoseStamped, self.navigate, queue_size=1) # handle nav goal events
     
+    def setMapChange(self,bool):
+        self.mapChange = True
 
     def navigate(self,goal):
         #create srv request using goal and current pos
-
+        
         start = self._current.position
         end = goal.pose.position
         pathRequestResult = self.aStarService(start,end)
+        i = 0
+        while (i < len(pathRequestResult.path.poses) and len(pathRequestResult.path.poses) > 0):
+            self.navToPose(pathRequestResult.path.poses[i])
+            i += 1
+            if(self.mapChange == True):
+                start = self._current.position
+                pathRequestResult = self.aStarService(start,end)
+                i = 0
+                self.mapChange = False
 
-        while(len(pathRequestResult.path.poses) > 0):
-            self.navToPose(pathRequestResult.path.poses[0])
-            start = self._current.position
-            pathRequestResult = self.aStarService(start,end)
 
 
        #use srv reqeust resposne to call runwholepath
@@ -177,7 +184,7 @@ class Robot:
             if(error>posAngle/2.0):
                 omega = min(self.maxAngAcc * abs(self.angleFrom(origin)) + .4, abs(maxOmega)) #accelerating to max omega
             else:
-                omega = min(-self.maxAngAcc*abs(self.angleFrom(origin)) + self.maxAngAcc*posAngle +.05, abs(maxOmega)) #deccelerating to zero
+                omega = min(-self.maxAngAcc*abs(self.angleFrom(origin)) + self.maxAngAcc*posAngle +.25, abs(maxOmega)) #deccelerating to zero
             omega = np.sign(angle)*omega
 
             self._vel_pub.publish(self.makeTwist(0,omega))
