@@ -9,7 +9,7 @@ from nav_msgs.msg import GridCells, Path
 from std_msgs.msg import *
 import math
 import tf
-from PathRequest.srv import *
+from lab3.srv import *
 import copy
 
 
