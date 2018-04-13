@@ -23,10 +23,10 @@ class PathFinder:
 		self.goal = None
 		rospy.init_node('request_path_server')#initiate path finding node
 		s = rospy.Service('request_path', PathRequest, self.aStar)
-		
+
 		self._odom_list = tf.TransformListener()
-		
-		
+
+
 
 		#publisher for path,obstacles
 		self.pathPub = rospy.Publisher("/path", Path,queue_size = 1)
@@ -41,6 +41,7 @@ class PathFinder:
 			pass			
 		#rospy.Subscriber("/move_base_simple/goal", PoseStamped, self.updateGoal, queue_size=1)#subscribe to Rviz goal marker
 		#rospy.Subscriber("/initialpose", PoseWithCovarianceStamped,self.updateStart,queue_size=1)#subscribe to Rviz starting marker
+
 		rospy.spin()
 
 	def updateLocalMap(self,occGrid):
@@ -89,6 +90,7 @@ class PathFinder:
 				self.expandObstacle(i) #this updates self.map
 
 		for i in range(len(occGrid.data)):		#Publish the obstacles in the map
+
 			if(self.map.data[i] > 50):
 				obstacles.append(self.indexToPont(i))
 
@@ -166,7 +168,7 @@ class PathFinder:
 		costSoFar[self.pointToIndex(start,self.map)] = 0;
 
 		while not len(openSet) == 0:
-			#print("open size, ", len(openSet), "closed size", len(closedSet))		
+			#print("open size, ", len(openSet), "closed size", len(closedSet))
 
 			current = heappop(openSet) #pull out just the point from the tuple
 
@@ -174,6 +176,7 @@ class PathFinder:
 			currentIdx = self.pointToIndex(current,self.map)
 			#print("current cost so far", costSoFar[currentIdx])
 			if(self.distance(current,end) < self.map.info.resolution):				
+
 				return self.reconstruct_path(cameFrom, current,costSoFar)
 				print "path found quitting"
 				break
@@ -224,7 +227,7 @@ class PathFinder:
 		return l
 
 
-	
+
 	def makeGridCell(self,pointList):
 		header = Header()
 		header.seq = 0
@@ -236,7 +239,7 @@ class PathFinder:
 
 		grid = GridCells(header,cell_width,cell_height,pointList)
 		return grid
-		
+
 
 	def reconstruct_path(self,cameFrom,current,costSoFar): #current is the goal
 		path = []
@@ -308,10 +311,10 @@ class PathFinder:
 
 		return neighbors
 
-    
+
 if __name__ == "__main__":
     p = PathFinder()
-    
+
     # test_service = rospy.ServiceProxy('request_path',PathRequest)
     # Start = Point(10,10,0)
     # End = Point(5,5,0)
@@ -322,4 +325,4 @@ if __name__ == "__main__":
     # rospy.spin()
     while  not rospy.is_shutdown():
     	rospy.wait_for_service('request_path')
-        pass 
+        pass
