@@ -318,7 +318,6 @@ class PathFinder:
 
 		return neighbors
 
-
 if __name__ == "__main__":
     p = PathFinder()
 
