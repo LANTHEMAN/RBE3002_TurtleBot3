@@ -3,7 +3,7 @@ from tf.transformations import quaternion_from_euler
 import rospy
 from nav_msgs.msg import OccupancyGrid
 #from lab3.srv import PathRequest
-from geometry_msgs.msg import Point, PoseStamped, PoseWithCovarianceStamped
+from geometry_msgs.msg import Point, PoseStamped, PoseWithCovarianceStamped, Quaternion
 from heapq import *
 from nav_msgs.msg import GridCells, Path
 from std_msgs.msg import *
@@ -25,6 +25,9 @@ class FrontierExplorer:
 
 		rospy.Subscriber('/map', OccupancyGrid, self.updateMap, queue_size=1) # handle nav goal events
 		self.obstaclePub = rospy.Publisher("/obstacles", GridCells, queue_size =1)
+		self.goalPub = rospy.Publisher('/move_base_simple/goal', PoseStamped, queue_size=1) # handle nav goal events
+		self.frontierMap = rospy.Publisher('/frontierMap', OccupancyGrid,queue_size=1)
+
 		print "Listening for maps"
 
 
@@ -93,50 +96,97 @@ class FrontierExplorer:
 		obstaclesEdges = cv2.dilate(obstaclesEdges, kernel, iterations=1)
 		
 		frontierEdges = unknownEdges - obstaclesEdges
+		frontierEdges = cv2.dilate(frontierEdges, kernel, iterations=1)
 		#frontierEdges = cv2.erode(frontierEdges, kernel, iterations=1)
-
 		#kernel = np.ones((3,3), np.uint8)
 		# #edges  = cv2.dilate(edges, kernel, iterations=1)
 		# cv2.imshow("uknownAll", unknownOnly)
 		# cv2.imshow("obstaclesAll", obstaclesOnly)
 		# cv2.imshow("u", unknownEdges)
 		# cv2.imshow("o", obstaclesEdges)
-		cv2.imshow("f", frontierEdges)
-		cv2.waitKey(0)
+		params = cv2.SimpleBlobDetector_Params()
+
+		params.minThreshold = 0;
+		params.maxThreshold = 256;
+		params.minDistBetweenBlobs = 1;
+		params.filterByColor = False;
+		params.blobColor = 255;
 
 
+		params.filterByArea = True
+		params.minArea = 1
+		params.maxArea = 1000000
+		params.filterByCircularity = False
+		params.filterByConvexity = False
+		params.filterByInertia=False
+
+		detector = cv2.SimpleBlobDetector_create(params)
+		keypoints = detector.detect(frontierEdges)
+		im_with_keypoints = cv2.drawKeypoints(frontierEdges, keypoints, np.array([]), (0,0,255), cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
+ 		
+		# Show keypoints
+		print(len(keypoints))
+		cv2.imshow("Keypoints", im_with_keypoints)
+		cv2.waitKey(1)
+
+		minDistance = 10000000000
+		minX = 0
+		minY = 0
+		minIndex = 0
+		minPoint = None
+		self._odom_list.waitForTransform('/odom', '/base_footprint', rospy.Time(0), rospy.Duration(1.0))
+		(position, orientation) = self._odom_list.lookupTransform('/odom','/base_footprint', rospy.Time(0)) 
+		
+
+		if(len(keypoints)== 0):
+			print "Mapping Completed! Please Save!"
+			return
+
+		for keypoint in keypoints:
+			x = keypoint.pt[0]
+			y = keypoint.pt[1]
+
+			index = int(y*self.map.info.width + x)
+			
+			#point = self.indexToPoint(index)
+			point = self.indexXYtoPoint(x, y)
+			d = self.distance(Point(position[0],position[1],0), point)
+			if(d < minDistance):
+				minDistance = d
+				minX = x
+				minY = y
+				minIndex = index
+				minPoint = point
+		print "xyindex: ", x, y, minIndex
+
+		print(d)
+
+		pStamped = PoseStamped()
+		header = Header()
+		header.stamp = rospy.Time.now()
+		header.frame_id = '/map'
+		pStamped.header = header
+		pStamped.pose.orientation = Quaternion(0,0,0,1)
+
+		pStamped.pose.position = point
+
+		self.goalPub.publish(pStamped)
+		print "published goal point: " , pStamped.pose.position
+
+		frontierEdges = frontierEdges.reshape(self.map.info.width * self.map.info.height)
+		frontierMap = copy.deepcopy(self.map)
+		print len(frontierMap.data)
+
+		frontierEdges = frontierEdges/2
+		frontierEdges = frontierEdges.astype("int8")
+		newData = frontierEdges.tolist()	
+		print(len(newData))
+
+		self.frontierMap.publish(frontierMap)
 
 
-		# self._odom_list.waitForTransform('/odom', '/base_footprint', rospy.Time(0), rospy.Duration(1.0))
-		# (position, orientation) = self._odom_list.lookupTransform('/odom','/base_footprint', rospy.Time(0)) 
-
-		# startLocation = Point(position[0],position[1],position[2])
-		# print "start location", startLocation
-
-		# openSet = [] #the heap that will contain the nodes that we still need to explore
-		# closedSet = [] #contains nodes that we have already explored
-		# heappush(openSet,(0,startLocation))
-
-		# while(not len(openSet) == 0): #there are still map nodes that we haven't looked at.
-		# 	current = heappop(openSet)
-		# 	cost = current[0] #get the priority
-		# 	current = current[1]
-		# 	currentIdx = self.pointToIndex(current, self.map)
-		# 	if(self.map.data[currentIdx] == -1):
-		# 		#PUBLISH FRONTEIR NODE TO SIMPLE GOAL
-		# 		print "Frontier found"
-		# 		return
-		# 	closedSet.append(current)
-		# 	print(len(closedSet))
-		# 	print(self.map.data[currentIdx])
-
-		# 	for neighbor in self.getNeighbors(current,1):
-		# 		nextIdx = self.pointToIndex(neighbor,self.map)
-		# 		if(nextIdx < len(self.map.data) and nextIdx > 0): #valid neighbor
-		# 			if(self.map.data[nextIdx] < 50 and neighbor not in closedSet): #not an obstacle add it to the open set
-		# 				heappush(openSet, (cost+1, neighbor))
-		# 			else: #neighbor is an obstacle add it to the closed set
-		# 				closedSet.append(neighbor)
+	def distance(self, p1, p2):
+		return math.sqrt((p1.x - p2.x)**2 + (p1.y - p2.y) **2)
 
 
 	def expandObstacle(self,index):
@@ -152,6 +202,10 @@ class FrontierExplorer:
 		self.map.data = tuple(self.map.data)
 
 
+	def indexXYtoPoint(self,x,y):
+		x = self.map.info.origin.position.x + self.map.info.resolution * x
+		y = self.map.info.origin.position.y + self.map.info.resolution * y
+		return Point(x,y,0)
 	def xyToIndex(self,x,y,map1):
 		x -= map1.info.origin.position.x
 		y-= map1.info.origin.position.y

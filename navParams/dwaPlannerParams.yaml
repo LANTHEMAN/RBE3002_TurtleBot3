@@ -1,0 +1,136 @@
+DWAPlannerROS:
+
+# Robot Configuration Parameters
+  max_vel_x: 0.18
+  min_vel_x: -0.18
+
+  max_vel_y: 0.0
+  min_vel_y: 0.0
+
+  # The velocity when robot is moving in a straight line
+  max_trans_vel:  0.18
+  min_trans_vel:  0.05
+#  trans_stopped_vel: 0.01
+
+  max_rot_vel: 1.8
+  min_rot_vel: 0.7
+#  rot_stopped_vel: 0.01
+
+  acc_lim_x: 2.0
+  acc_lim_theta: 2.0
+  acc_lim_y: 0.0
+
+# Goal Tolerance Parametes
+  yaw_goal_tolerance: 0.15
+  xy_goal_tolerance: 0.05
+
+# Forward Simulation Parameters
+  sim_time: 3.5
+  vx_samples: 20
+  vy_samples: 0
+  vtheta_samples: 40
+
+# Trajectory Scoring Parameters
+  path_distance_bias: .5
+  goal_distance_bias: .4
+  occdist_scale: 0.2
+  forward_point_distance: 0.2
+  stop_time_buffer: 0.01715880287748048
+  scaling_speed: 0.25
+  max_scaling_factor: 0.2
+
+# Oscillation Prevention Parameters
+  oscillation_reset_dist: 0.1
+
+# Debugging
+  publish_traj_pc : true
+  publish_cost_grid_pc: true
+ # global_frame_id: odom
+
+
+
+# !!python/object/new:dynamic_reconfigure.encoding.Config
+# dictitems:
+#   acc_lim_theta: 2.0
+#   acc_lim_x: 2.0
+#   acc_lim_y: 0.0
+#   acc_limit_trans: 0.1
+#   angular_sim_granularity: 0.1
+#   forward_point_distance: 0.325
+#   goal_distance_bias: 1.0319199492804956
+#   groups: !!python/object/new:dynamic_reconfigure.encoding.Config
+#     dictitems:
+#       acc_lim_theta: 2.0
+#       acc_lim_x: 2.0
+#       acc_lim_y: 0.0
+#       acc_limit_trans: 0.1
+#       angular_sim_granularity: 0.1
+#       forward_point_distance: 0.325
+#       goal_distance_bias: 1.0319199492804956
+#       groups: !!python/object/new:dynamic_reconfigure.encoding.Config
+#         state: []
+#       id: 0
+#       max_rot_vel: 1.8
+#       max_scaling_factor: 0.2
+#       max_trans_vel: 0.18
+#       max_vel_x: 0.18
+#       max_vel_y: 0.0
+#       min_rot_vel: 0.7
+#       min_trans_vel: 0.05
+#       min_vel_x: -0.18
+#       min_vel_y: 0.0
+#       name: Default
+#       occdist_scale: 0.15838444032453627
+#       oscillation_reset_angle: 0.11040102781581894
+#       oscillation_reset_dist: 0.05
+#       parameters: !!python/object/new:dynamic_reconfigure.encoding.Config
+#         state: []
+#       parent: 0
+#       path_distance_bias: 1.0989856505363016
+#       prune_plan: false
+#       restore_defaults: false
+#       rot_stopped_vel: 0.1
+#       scaling_speed: 0.25
+#       sim_granularity: 0.025
+#       sim_time: 3.5
+#       state: true
+#       stop_time_buffer: 0.04715880287748048
+#       trans_stopped_vel: 0.1
+#       twirling_scale: 0.015709255323664916
+#       type: ''
+#       use_dwa: true
+#       vth_samples: 20
+#       vx_samples: 20
+#       vy_samples: 1
+#       xy_goal_tolerance: 0.05
+#       yaw_goal_tolerance: 0.15
+#     state: []
+#   max_rot_vel: 1.8
+#   max_scaling_factor: 0.2
+#   max_trans_vel: 0.18
+#   max_vel_x: 0.18
+#   max_vel_y: 0.0
+#   min_rot_vel: 0.7
+#   min_trans_vel: 0.05
+#   min_vel_x: -0.18
+#   min_vel_y: 0.0
+#   occdist_scale: 0.15838444032453627
+#   oscillation_reset_angle: 0.11040102781581894
+#   oscillation_reset_dist: 0.05
+#   path_distance_bias: 1.0989856505363016
+#   prune_plan: false
+#   restore_defaults: false
+#   rot_stopped_vel: 0.1
+#   scaling_speed: 0.25
+#   sim_granularity: 0.025
+#   sim_time: 3.5
+#   stop_time_buffer: 0.04715880287748048
+#   trans_stopped_vel: 0.1
+#   twirling_scale: 0.015709255323664916
+#   use_dwa: true
+#   vth_samples: 20
+#   vx_samples: 20
+#   vy_samples: 1
+#   xy_goal_tolerance: 0.05
+#   yaw_goal_tolerance: 0.15
+# state: []
