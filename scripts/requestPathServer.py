@@ -11,6 +11,10 @@ import math
 import tf
 from lab3.srv import *
 
+import cv2
+import numpy as np
+from matplotlib import pyplot as plt
+
 import copy
 
 class PathFinder:
@@ -40,7 +44,11 @@ class PathFinder:
 		rospy.Subscriber('/move_base/local_costmap/costmap', OccupancyGrid, self.updateLocalMap, queue_size=1)
 		rospy.Subscriber('/map', OccupancyGrid, self.updateMap, queue_size=1) # handle nav goal events
 		while(self.map == None): 
-			pass			
+			print 'waiting for map'
+			pass		
+		while(self.local_costmap == None):
+			print 'waiting for local costmap'
+			pass	
 		#rospy.Subscriber("/move_base_simple/goal", PoseStamped, self.updateGoal, queue_size=1)#subscribe to Rviz goal marker
 		#rospy.Subscriber("/initialpose", PoseWithCovarianceStamped,self.updateStart,queue_size=1)#subscribe to Rviz starting marker
 
@@ -48,10 +56,10 @@ class PathFinder:
 
 	def updateLocalMap(self,occGrid):
 		self.dumbcounter += 1
-		if (self.dumbcounter > 2):
+		if (self.dumbcounter > 1000):
 			self.changeMap.publish(True)
 			self.dumbcounter = 0
-		self.local_costmap = occGrid
+		self.local_costmap = copy.deepcopy(occGrid)
 
 	def updateStart(self, p):
 		poseStamped = PoseStamped()
@@ -87,34 +95,49 @@ class PathFinder:
 
 
 	def updateMap(self,occGrid):
+
 		# print "Updating map"
-		self.map = copy.deepcopy(occGrid)
+			print "new map found"
+			self.map = copy.deepcopy(occGrid)
+			obstacles = []
+			print("expanding obstacles")
+			npArray = np.array(self.map.data).reshape(self.map.info.width, self.map.info.height)
+			np.add(npArray, 1, npArray)
+			npArray = npArray.astype("uint8")
 
 
-		obstacles = []
-		for i in range(len(occGrid.data)):	
-			if(occGrid.data[i] > 50):
-				self.expandObstacle(i) #this updates self.map
+			#print(np.max(npArray))
+			#print(np.min(npArray))
+			#print npArray
+			#print(np.shape(npArray))
+			kernel = np.ones((7,7), np.uint8)
+			npArray  = cv2.dilate(npArray, kernel, iterations=1)
+			# cv2.namedWindow("image", cv2.WINDOW_NORMAL)
+			# cv2.imshow("image", npArray)
+			# cv2.waitKey(0)
+			npArray = npArray.astype("int")
+			np.add(npArray, -1, npArray)
+			#print(np.max(npArray))
+			#print(np.min(npArray))
+			npArray = npArray.reshape(self.map.info.width * self.map.info.height)
+			self.map.data = npArray.tolist()
+			#print self.map.data
+			possibleFrontier = []
+			print "publishing obstacles"
+			for i in range(len(self.map.data)):	#Publish the obstacles in the map
+				if(self.map.data[i] > 50 ):
+					obstacles.append(self.indexToPoint(i))
+				#if(self.map.data[i] < 0):
+					#possibleFrontier.append(self.indexToPoint(i))
+			#print(possibleFrontier)
+			print "done"
 
-		for i in range(len(occGrid.data)):		#Publish the obstacles in the map
 
-			if(self.map.data[i] > 50):
-				obstacles.append(self.indexToPont(i))
+			grid = self.makeGridCell(obstacles)	
 
-
-		grid = self.makeGridCell(obstacles)
-		#print(grid)
-		# while(self.obstaclePub.get_num_connections() < 1):
-		# 	print(self.obstaclePub.get_num_connections())
-		
-
-		#!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-		#we need to keep publishing in order to get rviz to recognize the message
-		for i in range(1):
-			self.obstaclePub.publish(grid)
-			rospy.sleep(.5)
-		print("published")
-
+			for i in range(1):
+				self.obstaclePub.publish(grid)
+			print("published Obstacles")
 
 
 	def expandObstacleFromPoint(self,point):
@@ -125,7 +148,7 @@ class PathFinder:
 
 		self.map.data = list(self.map.data)
 
-		neighbors = self.getNeighbors(self.indexToPont(index),expansionSize)
+		neighbors = self.getNeighbors(self.indexToPoint(index),expansionSize)
 		for n in neighbors:
 			if(self.pointToIndex(n,self.map) > 0 and self.pointToIndex(n,self.map) < len(self.map.data)):
 				self.map.data[self.pointToIndex(n,self.map)] = self.map.data[index]
@@ -136,11 +159,13 @@ class PathFinder:
 
 		#print(occGrid.info)
 		#print("\n")
-	def indexToPont(self, i):
+
+	def indexToPoint(self, i):
 		x = (i % self.map.info.width) * self.map.info.resolution +self.map.info.origin.position.x
 		y= i / self.map.info.width * self.map.info.resolution + self.map.info.origin.position.y
 
 		return Point(x,y,0)
+
 
 
 	def xyToIndex(self,x,y,map1):
@@ -192,8 +217,8 @@ class PathFinder:
 			#print ("closed set size: ", len(closedSet))
 			#self.closedPub.publish(self.makeGridCell(closedSet))
 
-			for next in self.getNeighbors(current,1):
-				nextIdx = self.pointToIndex(next,self.map)
+			for nextNode in self.getNeighbors(current,1):
+				nextIdx = self.pointToIndex(nextNode,self.map)
 				if (nextIdx < len(self.map.data) and nextIdx > 0):
 					if(self.map.data[nextIdx] == -1):
 						mapData = 100
@@ -201,24 +226,24 @@ class PathFinder:
 						mapData = self.map.data[nextIdx]
 
 					
-					heur = self.localCostHeuristic(next, self.local_costmap)
+					heur = self.localCostHeuristic(nextNode, self.local_costmap)
 
 					#discourage turning more than necessary - additional heuristic value
 					prevNode = cameFrom[self.pointToIndex(current,self.map)]
 					if(prevNode != None):
 					 	prevAngle = math.atan2(prevNode.y - current.y, prevNode.x - current.x)
-						nextAngle = math.atan2(current.y - next.y, current.x - next.x)
+						nextAngle = math.atan2(current.y - nextNode.y, current.x - nextNode.x)
 						heur += (abs(prevAngle - nextAngle) / (math.pi)) *0.01
 
 					new_cost = 0
-					if(next.x != current.x and next.y != current.y): #it was a diaganol movement
+					if(nextNode.x != current.x and nextNode.y != current.y): #it was a diaganol movement
 						new_cost += costSoFar[currentIdx] + mapData+ self.map.info.resolution*1.4141
 					else:
 						new_cost += costSoFar[currentIdx] + mapData + self.map.info.resolution #new cost = old cost + probability its an obstacled + 1 striaght movement
 					if not nextIdx in costSoFar or new_cost < costSoFar[nextIdx]:
 						costSoFar[nextIdx] = new_cost
-						priority = new_cost + heur+ self.heuristic(next,end) #Fn
-						heappush(openSet, (priority, next)) #heaps sort on first value of tuple
+						priority = new_cost + heur+ self.heuristic(nextNode,end) #Fn
+						heappush(openSet, (priority, nextNode)) #heaps sort on first value of tuple
 						self.openPub.publish(self.makeGridCell([x[1] for x in openSet]))
 						#print ("open set size: ", len(openSet))
 						cameFrom[nextIdx] = current
