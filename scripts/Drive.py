@@ -16,7 +16,6 @@ from lab3.srv import *
 class Robot:
 	
     def __init__(self):
-
         """
             This constructor sets up class variables and pubs/subs
         """
@@ -33,31 +32,53 @@ class Robot:
         self._odom_list = tf.TransformListener()
         rospy.Timer(rospy.Duration(.01), self.timerCallback)
         self._vel_pub = rospy.Publisher('/cmd_vel', Twist, queue_size=1)
-        self.distAccuracy = .01
-        self.angleAccuracy = .01
-        self.maxLinAcc = 1 #meters per second per meter
+        self.distAccuracy = .02
+        self.angleAccuracy = .1
+        self.maxLinAcc = 1.5 #meters per second per meter
         self.maxSpeed = .22
         self.maxAngAcc = .8 #radians per second per radian
         self.aStarService = rospy.ServiceProxy('request_path',PathRequest)
         rospy.Subscriber('/mapChange',Bool, self.setMapChange, queue_size=1)
         rospy.Subscriber('/move_base_simple/goal', PoseStamped, self.navigate, queue_size=1) # handle nav goal events
+        self.goalPub = rospy.Publisher('/currentGoal', PoseStamped, queue_size=1)
+        rospy.Rate(10)
     
     def setMapChange(self,bool):
         self.mapChange = True
 
     def navigate(self,goal):
         #create srv request using goal and current pos
+        print "Navigating from ", self._current.position, "to ", goal
         
-        start = self._current.position
-        end = goal.pose.position
-        pathRequestResult = self.aStarService(start,end)
+        startStamped = PoseStamped()
+        header = Header()
+        header.frame_id = "/odom"
+        header.stamp = rospy.Time.now()
+        startStamped.pose = self._current
+        startStamped.header = header
+        print "waiting for transform", goal.header.frame_id
+        self._odom_list.waitForTransform('/map', '/odom', rospy.Time.now(), rospy.Duration(2.0))
+        start = self._odom_list.transformPose('/map', startStamped) # transform the nav goal to the global coordinate system
+        startPoint = start.pose.position #This is in map coordinates
+
+
+        #end = goal.pose.position
+
+        #goal.header.stamp = rospy.Time.now()
+        print "waiting for transform", goal.header.frame_id
+        self._odom_list.waitForTransform('/map', goal.header.frame_id, rospy.Time.now(), rospy.Duration(2.0))
+        robotGoal = self._odom_list.transformPose('/map', goal) # transform the nav goal to the global coordinate system
+        goalPoint = robotGoal.pose.position #This is in map coordinates
+
+        print "doing A*"
+        pathRequestResult = self.aStarService(startPoint,goalPoint)
         i = 0
         while (i < len(pathRequestResult.path.poses) and len(pathRequestResult.path.poses) > 0):
             self.navToPose(pathRequestResult.path.poses[i])
             i += 1
             if(self.mapChange == True):
                 start = self._current.position
-                pathRequestResult = self.aStarService(start,end)
+                pathRequestResult = self.aStarService(startPoint,goalPoint)
                 i = 0
                 self.mapChange = False
 
@@ -69,26 +90,29 @@ class Robot:
         poses = pathRequest.path.poses
         for nextGoal in poses:
             self.navToPose(nextGoal)
+        print("Arrived at destination!!!")
 
     def navToPose(self,goal):
         """
             This is a callback function. It should exract data from goal, drive in a striaght line to reach the goal and 
             then spin to match the goal orientation.
         """
-        goalPose = goal.pose
+        # goalPose = goal.pose
         goal.header.stamp = rospy.Time.now()
         print "waiting for transform", goal.header.frame_id
         self._odom_list.waitForTransform('/odom', goal.header.frame_id, rospy.Time.now(), rospy.Duration(2.0))
         self._odom_list.waitForTransform('/odom', goal.header.frame_id, rospy.Time.now(), rospy.Duration(2.0))
         robotGoal = self._odom_list.transformPose('/odom', goal) # transform the nav goal to the global coordinate system
         
+        self.goalPub.publish(robotGoal)
+        robotGoal =robotGoal.pose
         #find angle for arriving at position
-        tempAngle = math.atan2(goalPose.position.y - self._current.position.y, goalPose.position.x - self._current.position.x)
+        tempAngle = math.atan2(robotGoal.position.y - self._current.position.y, robotGoal.position.x - self._current.position.x)
         
         self.rotate(tempAngle - self._yaw) #rotate towards goal
         #print(self._yaw)
-        self.driveStraight(self.maxSpeed, self.distanceFrom(goalPose)) #drive to goal
-        self.rotate(self.angleFrom(goalPose)) #rotate to orientation
+        self.driveStraight(self.maxSpeed, self.distanceFrom(robotGoal)) #drive to goal
+        self.rotate(self.angleFrom(robotGoal)) #rotate to orientation
 
 
     def executeTrajectory(self):
@@ -114,16 +138,18 @@ class Robot:
         while(error>self.distAccuracy):
             #Trapezoidal velocity ramping- accelerates to max speed and decelerates to 0
             if(error>distance/2.0):
-                vel = min(self.maxLinAcc * self.distanceFrom(origin) + .1, abs(speed)) #accelerating #slgiht starting speed needed to get moving
+                vel = min(self.maxLinAcc * self.distanceFrom(origin) + .05, abs(speed)) #accelerating #slgiht starting speed needed to get moving
             else:
-                vel = min(-self.maxLinAcc*self.distanceFrom(origin) + self.maxLinAcc*distance + .1, abs(speed))#deccelerating #slight ending speed so it doesnt take too long
+                vel = min(-self.maxLinAcc*self.distanceFrom(origin) + self.maxLinAcc*distance + .05, abs(speed))#deccelerating #slight ending speed so it doesnt take too long
             vel = np.sign(speed)*vel #controls the direction of travel
 
             self._vel_pub.publish(self.makeTwist(vel,0))
             #print(vel)
             error = distance - self.distanceFrom(origin)
+            rospy.sleep(.05)
             pass
-        self._vel_pub.publish(self.makeTwist(0,0))
+        for i in range(50):
+            self._vel_pub.publish(self.makeTwist(0,0))
         #print("end", self._current.position.x, self._current.position.y)
         print("went Straight ", self.distanceFrom(origin), "m");
         
@@ -170,7 +196,7 @@ class Robot:
         if(angle < -math.pi):
             angle = 2*math.pi - abs(angle)
       
-        maxOmega = .5 
+        maxOmega = .10
         
 
         origin = copy.deepcopy(self._current)
@@ -184,14 +210,18 @@ class Robot:
             if(error>posAngle/2.0):
                 omega = min(self.maxAngAcc * abs(self.angleFrom(origin)) + .4, abs(maxOmega)) #accelerating to max omega
             else:
-                omega = min(-self.maxAngAcc*abs(self.angleFrom(origin)) + self.maxAngAcc*posAngle +.25, abs(maxOmega)) #deccelerating to zero
+                omega = min(-self.maxAngAcc*abs(self.angleFrom(origin)) + self.maxAngAcc*posAngle +.1, abs(maxOmega)) #deccelerating to zero
             omega = np.sign(angle)*omega
 
             self._vel_pub.publish(self.makeTwist(0,omega))
             error = posAngle - abs(self.angleFrom(origin))
             #print ('error ', error, 'omega ', omega)
+            rospy.sleep(.02)
+
             pass
-        self._vel_pub.publish(self.makeTwist(0,0))
+
+        for i in range(50):
+            self._vel_pub.publish(self.makeTwist(0,0))
         print("turned ", self.angleFrom(origin), "rads");
         
 
@@ -206,9 +236,9 @@ class Robot:
             Updates this instance of Robot's internal position variable (self._current)
         """
 	# wait for and get the transform between two frames
-        self._odom_list.waitForTransform('/odom', '/base_footprint', rospy.Time(0), rospy.Duration(1.0))
-        (position, orientation) = self._odom_list.lookupTransform('/odom','/base_footprint', rospy.Time(0)) 
-        #print("position", position[0], position[1])
+        self._odom_list.waitForTransform('/odom', '/base_link', rospy.Time(0), rospy.Duration(1.0))
+        (position, orientation) = self._odom_list.lookupTransform('/odom','/base_link', rospy.Time(0)) 
+        #print "position", position[0], position[1]
 
 	   # save the current position and orientation
 
@@ -256,12 +286,19 @@ class Robot:
         return euler_from_quaternion(originQ)[2] - euler_from_quaternion(curQ)[2]
         
 if __name__ == '__main__':
+    print "starting drive.py"
     
     rospy.init_node('drive_base')
     turtle = Robot()
-    rospy.sleep(2000);    
+    print "robot started"
+    rospy.sleep(2);  
+    print "rotating"  
+    turtle.driveStraight(.01, .01)
+   # turtle.rotate(math.pi/2)
+    #turtle.rotate(math.pi/2)
 
     rospy.wait_for_service('request_path')
+    print("Ready for directions")
     rospy.spin()
     while  not rospy.is_shutdown():
         rospy.wait_for_service('request_path')

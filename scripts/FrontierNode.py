@@ -3,7 +3,7 @@ from tf.transformations import quaternion_from_euler
 import rospy
 from nav_msgs.msg import OccupancyGrid
 #from lab3.srv import PathRequest
-from geometry_msgs.msg import Point, PoseStamped, PoseWithCovarianceStamped, Quaternion
+from geometry_msgs.msg import Twist,Point, PoseStamped, PoseWithCovarianceStamped, Quaternion
 from heapq import *
 from nav_msgs.msg import GridCells, Path
 from std_msgs.msg import *
@@ -22,11 +22,13 @@ class FrontierExplorer:
 		self.map = None
 		rospy.init_node('FrontierNode')#initiate path finding node
 		self._odom_list = tf.TransformListener()
+		self._vel_pub = rospy.Publisher('/cmd_vel', Twist, queue_size=1)
 
 		rospy.Subscriber('/map', OccupancyGrid, self.updateMap, queue_size=1) # handle nav goal events
 		self.obstaclePub = rospy.Publisher("/obstacles", GridCells, queue_size =1)
 		self.goalPub = rospy.Publisher('/move_base_simple/goal', PoseStamped, queue_size=1) # handle nav goal events
 		self.frontierMap = rospy.Publisher('/frontierMap', OccupancyGrid,queue_size=1)
+		self.isDone = False
 
 		print "Listening for maps"
 
@@ -46,7 +48,7 @@ class FrontierExplorer:
 			#print(np.min(npArray))
 			#print npArray
 			#print(np.shape(npArray))
-			kernel = np.ones((7,7), np.uint8)
+			kernel = np.ones((5,5), np.uint8)
 			npArray  = cv2.dilate(npArray, kernel, iterations=1)
 			# cv2.namedWindow("image", cv2.WINDOW_NORMAL)
 			# cv2.imshow("image", npArray)
@@ -74,7 +76,8 @@ class FrontierExplorer:
 			for i in range(1):
 				self.obstaclePub.publish(grid)
 			print("published Obstacles")
-			self.updateNearestFrontier()
+			if(not self.isDone):
+				self.updateNearestFrontier()
 
 	def updateNearestFrontier(self):
 		npArray = np.array(self.map.data).reshape(self.map.info.width, self.map.info.height)
@@ -96,6 +99,7 @@ class FrontierExplorer:
 		obstaclesEdges = cv2.dilate(obstaclesEdges, kernel, iterations=1)
 		
 		frontierEdges = unknownEdges - obstaclesEdges
+		kernel = np.ones((7,7), np.uint8)
 		frontierEdges = cv2.dilate(frontierEdges, kernel, iterations=1)
 		#frontierEdges = cv2.erode(frontierEdges, kernel, iterations=1)
 		#kernel = np.ones((3,3), np.uint8)
@@ -140,6 +144,9 @@ class FrontierExplorer:
 
 		if(len(keypoints)== 0):
 			print "Mapping Completed! Please Save!"
+			self.isDone = True			
+			while(1):
+				self._vel_pub.publish(Twist())
 			return
 
 		for keypoint in keypoints:

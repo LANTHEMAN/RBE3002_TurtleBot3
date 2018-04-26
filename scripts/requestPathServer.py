@@ -41,14 +41,14 @@ class PathFinder:
 		self.openPub = rospy.Publisher("/open_set", GridCells, queue_size = 1)
 		self.changeMap = rospy.Publisher("/mapChange",Bool, queue_size = 1)
 
-		rospy.Subscriber('/move_base/local_costmap/costmap', OccupancyGrid, self.updateLocalMap, queue_size=1)
+		#rospy.Subscriber('/move_base/local_costmap/costmap', OccupancyGrid, self.updateLocalMap, queue_size=1)
 		rospy.Subscriber('/map', OccupancyGrid, self.updateMap, queue_size=1) # handle nav goal events
 		while(self.map == None): 
 			print 'waiting for map'
 			pass		
-		while(self.local_costmap == None):
-			print 'waiting for local costmap'
-			pass	
+		# while(self.local_costmap == None):
+		# 	print 'waiting for local costmap'
+		# 	pass	
 		#rospy.Subscriber("/move_base_simple/goal", PoseStamped, self.updateGoal, queue_size=1)#subscribe to Rviz goal marker
 		#rospy.Subscriber("/initialpose", PoseWithCovarianceStamped,self.updateStart,queue_size=1)#subscribe to Rviz starting marker
 
@@ -61,16 +61,16 @@ class PathFinder:
 			self.dumbcounter = 0
 		self.local_costmap = copy.deepcopy(occGrid)
 
-	def updateStart(self, p):
-		poseStamped = PoseStamped()
-		poseStamped.header = p.header
-		poseStamped.pose = p.pose.pose
+	# def updateStart(self, p):
+	# 	poseStamped = PoseStamped()
+	# 	poseStamped.header = p.header
+	# 	poseStamped.pose = p.pose.pose
 
-		self._odom_list.waitForTransform('/map', p.header.frame_id, rospy.Time.now(), rospy.Duration(1.0))
-		newPose = self._odom_list.transformPose("/map", poseStamped)
-		self.start = newPose.pose.position
-		print "start updated to \n", self.start
-		#print("xy index", self.pointToIndex(p.pose.pose.position))
+	# 	self._odom_list.waitForTransform('/odom', p.header.frame_id, rospy.Time.now(), rospy.Duration(1.0))
+	# 	newPose = self._odom_list.transformPose("/odom", poseStamped)
+	# 	self.start = newPose.pose.position
+	# 	print "start updated to \n", self.start
+	# 	#print("xy index", self.pointToIndex(p.pose.pose.position))
 
 	def updateGoal(self,goal):
 		self._odom_list.waitForTransform('/map', goal.header.frame_id, rospy.Time.now(), rospy.Duration(1.0))
@@ -110,7 +110,7 @@ class PathFinder:
 			#print(np.min(npArray))
 			#print npArray
 			#print(np.shape(npArray))
-			kernel = np.ones((7,7), np.uint8)
+			kernel = np.ones((5,5), np.uint8)
 			npArray  = cv2.dilate(npArray, kernel, iterations=1)
 			# cv2.namedWindow("image", cv2.WINDOW_NORMAL)
 			# cv2.imshow("image", npArray)
@@ -135,7 +135,7 @@ class PathFinder:
 
 			grid = self.makeGridCell(obstacles)	
 
-			for i in range(1):
+			for i in range(3):
 				self.obstaclePub.publish(grid)
 			print("published Obstacles")
 
@@ -175,21 +175,21 @@ class PathFinder:
 		yIndex = (int)(y/map1.info.resolution)
 		return int(yIndex*map1.info.width + xIndex)
 	def pointToIndex(self,p,map1):
-		newP = PoseStamped()
-		newP.header.frame_id = "/map"
-		newP.header.stamp = rospy.Time.now()
-		newP.pose.position = p
-		self._odom_list.waitForTransform(map1.header.frame_id, newP.header.frame_id, rospy.Time.now(), rospy.Duration(1.0))
-		finalMapPose = self._odom_list.transformPose(map1.header.frame_id, newP)
+		# newP = PoseStamped()
+		# newP.header.frame_id = "/odom"
+		# newP.header.stamp = rospy.Time.now()
+		# newP.pose.position = p
+		# self._odom_list.waitForTransform(map1.header.frame_id, newP.header.frame_id, rospy.Time.now(), rospy.Duration(1.0))
+		# finalMapPose = newP# self._odom_list.transformPose(map1.header.frame_id, newP)
 
-		x = finalMapPose.pose.position.x
-		y = finalMapPose.pose.position.y
+		x = p.x#Pose is in odom finalMapPose.pose.position.x
+		y = p.y# pose is in odom finalMapPose.pose.position.y
 		return self.xyToIndex(x,y,map1)
 
 	def aStar(self,req):
 		print "Processing Request to go from\n", req.start, "\nto\n",
-		self.goal = req.end
-		start = req.start
+		self.goal = req.end #In Map
+		start = req.start # In Map
 		end = req.end
 		closedSet = []
 		openSet = [] #a heap of tuples
@@ -215,7 +215,7 @@ class PathFinder:
 
 			closedSet.append(current)
 			#print ("closed set size: ", len(closedSet))
-			#self.closedPub.publish(self.makeGridCell(closedSet))
+			self.closedPub.publish(self.makeGridCell(closedSet))
 
 			for nextNode in self.getNeighbors(current,1):
 				nextIdx = self.pointToIndex(nextNode,self.map)
@@ -226,8 +226,8 @@ class PathFinder:
 						mapData = self.map.data[nextIdx]
 
 					
-					heur = self.localCostHeuristic(nextNode, self.local_costmap)
-
+					#heur = self.localCostHeuristic(nextNode, self.local_costmap)
+					heur = 0
 					#discourage turning more than necessary - additional heuristic value
 					prevNode = cameFrom[self.pointToIndex(current,self.map)]
 					if(prevNode != None):
@@ -237,7 +237,7 @@ class PathFinder:
 
 					new_cost = 0
 					if(nextNode.x != current.x and nextNode.y != current.y): #it was a diaganol movement
-						new_cost += costSoFar[currentIdx] + mapData+ self.map.info.resolution*1.4141
+						new_cost += costSoFar[currentIdx] + mapData+ self.map.info.resolution*4.4141
 					else:
 						new_cost += costSoFar[currentIdx] + mapData + self.map.info.resolution #new cost = old cost + probability its an obstacled + 1 striaght movement
 					if not nextIdx in costSoFar or new_cost < costSoFar[nextIdx]:
